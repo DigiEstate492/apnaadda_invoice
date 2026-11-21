@@ -253,7 +253,7 @@ function MenuEditor({ menu, setMenu }) {
 
   const saveItem = () => {
     const f = { ...form, name: form.name.trim(), category: form.category.trim() || "Other", price: Number(form.price) || 0 };
-    if (!f.name) return alert("Item name is required");
+    if (!f.name) return alert("Item name is mandatory");
     if (f.unit === "") delete f.unit;
     if (f.id) setMenu(menu.map((m) => (m.id === f.id ? f : m)));
     else setMenu([...menu, { ...f, id: f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + Date.now().toString(36) }]);
