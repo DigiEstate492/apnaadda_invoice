@@ -11,6 +11,17 @@ const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSO
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 const inr = (n) => "₹" + (Math.round(n * 100) / 100).toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
+// GST state codes = first two digits of a GSTIN.
+const GST_STATES = { "01":"Jammu & Kashmir","02":"Himachal Pradesh","03":"Punjab","04":"Chandigarh","05":"Uttarakhand","06":"Haryana","07":"Delhi","08":"Rajasthan","09":"Uttar Pradesh","10":"Bihar","11":"Sikkim","12":"Arunachal Pradesh","13":"Nagaland","14":"Manipur","15":"Mizoram","16":"Tripura","17":"Meghalaya","18":"Assam","19":"West Bengal","20":"Jharkhand","21":"Odisha","22":"Chhattisgarh","23":"Madhya Pradesh","24":"Gujarat","26":"Dadra & Nagar Haveli and Daman & Diu","27":"Maharashtra","29":"Karnataka","30":"Goa","31":"Lakshadweep","32":"Kerala","33":"Tamil Nadu","34":"Puducherry","35":"Andaman & Nicobar","36":"Telangana","37":"Andhra Pradesh","38":"Ladakh" };
+const stateOf = (gstin) => GST_STATES[String(gstin || "").slice(0, 2)] || "";
+const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+// Same-state supply → split into CGST + SGST; a guest GSTIN from another state → IGST.
+function gstSplit(biz, guestGstin, taxPercent, taxAmt) {
+  if (!biz.gstin || !taxPercent) return null;
+  const inter = guestGstin && guestGstin.slice(0, 2) !== biz.gstin.slice(0, 2);
+  return inter ? [["IGST", taxPercent, taxAmt]] : [["CGST", taxPercent / 2, taxAmt / 2], ["SGST", taxPercent / 2, taxAmt / 2]];
+}
+
 const CAT_ICONS = {
   "Breakfast": LuCroissant, "Bread": LuWheat, "Snacks": LuPopcorn, "Main Course (Veg)": LuUtensils,
   "Raita / Curd": LuMilk, "Non Veg": LuDrumstick, "Chinese": LuUtensilsCrossed, "South Indian": LuChefHat,
@@ -45,7 +56,9 @@ export default function Home() {
     if (load("aa_menu_version", 0) !== MENU_VERSION) { save("aa_menu", MENU); save("aa_menu_version", MENU_VERSION); }
     setMenu(load("aa_menu", MENU));
     setInvoices(load("aa_invoices", []));
-    setBiz({ ...BUSINESS, ...load("aa_business", {}) });
+    const savedBiz = load("aa_business", {});
+    if (/^apna adda/i.test(savedBiz.name || "")) savedBiz.name = BUSINESS.name; // renamed to Apna Stay
+    setBiz({ ...BUSINESS, ...savedBiz });
     setReady(true);
     // Ask the browser to keep this site's data even when disk space runs low.
     try { navigator.storage?.persist?.(); } catch {}
@@ -113,6 +126,7 @@ function Biller({ biz, menu, invoices, onSave }) {
   const [lines, setLines] = useState([]);
   const [customer, setCustomer] = useState("");
   const [room, setRoom] = useState("");
+  const [guestGstin, setGuestGstin] = useState("");
   const [tax, setTax] = useState(biz.taxPercent ?? DEFAULT_TAX_PERCENT);
   const [discount, setDiscount] = useState(0);
   const [payment, setPayment] = useState("Cash");
@@ -146,8 +160,8 @@ function Biller({ biz, menu, invoices, onSave }) {
 
   const generate = () => {
     if (!lines.length) return;
-    onSave({ biz, no: nextNo, date: new Date().toISOString(), customer, room, lines, subtotal, discount: disc, taxPercent: Number(tax) || 0, tax: taxAmt, total, payment });
-    setLines([]); setCustomer(""); setRoom(""); setDiscount(0);
+    onSave({ biz, no: nextNo, date: new Date().toISOString(), customer, room, guestGstin: guestGstin.toUpperCase().trim(), lines, subtotal, discount: disc, taxPercent: Number(tax) || 0, tax: taxAmt, total, payment });
+    setLines([]); setCustomer(""); setRoom(""); setGuestGstin(""); setDiscount(0);
   };
 
   return (
@@ -194,6 +208,8 @@ function Biller({ biz, menu, invoices, onSave }) {
           <input placeholder="Guest name" value={customer} onChange={(e) => setCustomer(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
           <input placeholder="Room / Table" value={room} onChange={(e) => setRoom(e.target.value)} style={{ width: 120 }} />
         </div>
+        {biz.gstin && <input className="guestgst" placeholder="Guest GSTIN (optional, for company bills)" value={guestGstin} maxLength={15}
+          onChange={(e) => setGuestGstin(e.target.value.toUpperCase())} style={guestGstin && !GSTIN_RE.test(guestGstin) ? { boxShadow: "0 0 0 1px var(--red)" } : {}} />}
         <div className="lines">
           {lines.map((l) => (
             <div className="line" key={l.id}>
@@ -213,7 +229,7 @@ function Biller({ biz, menu, invoices, onSave }) {
         <div className="totals">
           <div><span>Subtotal</span><span>{inr(subtotal)}</span></div>
           {disc > 0 && <div><span>Discount</span><span>−{inr(disc)}</span></div>}
-          <div><span>Tax ({tax}%)</span><span>{inr(taxAmt)}</span></div>
+          {(gstSplit(biz, guestGstin, Number(tax) || 0, taxAmt) || [["Tax", tax, taxAmt]]).map(([n, r, a]) => <div key={n}><span>{n} ({r}%)</span><span>{inr(a)}</span></div>)}
           <div className="grand"><span>Total</span><span>{inr(total)}</span></div>
         </div>
         <div className="row">
@@ -335,7 +351,7 @@ function Settings({ biz, setBiz }) {
   const [saved, setSaved] = useState(false);
   useEffect(() => setF(biz), [biz]);
   const up = (k) => (e) => { setF({ ...f, [k]: e.target.value }); setSaved(false); };
-  const gstOk = !f.gstin || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(f.gstin);
+  const gstOk = !f.gstin || GSTIN_RE.test(String(f.gstin).toUpperCase());
   const submit = () => { setBiz({ ...f, gstin: (f.gstin || "").toUpperCase().trim(), taxPercent: Number(f.taxPercent) || 0 }); setSaved(true); };
   return (
     <div className="panel settings">
@@ -353,11 +369,16 @@ function Settings({ biz, setBiz }) {
         <Field label={gstOk ? "GSTIN" : "GSTIN (format looks wrong)"}><input value={f.gstin || ""} onChange={up("gstin")} placeholder="05ABCDE1234F1Z5" style={{ textTransform: "uppercase", ...(gstOk ? {} : { boxShadow: "0 0 0 1px var(--red)" }) }} maxLength={15} /></Field>
         <Field label="FSSAI licence no."><input value={f.fssai || ""} onChange={up("fssai")} placeholder="14-digit number" /></Field>
       </div>
+      {f.gstin && gstOk && <p className="hint">State from GSTIN: <b>{stateOf(f.gstin)}</b> · bills will be printed as <b>Tax Invoice</b> with CGST + SGST.</p>}
+      <div className="two">
+        <Field label="SAC / HSN code"><input value={f.sac ?? "996331"} onChange={up("sac")} placeholder="996331 (restaurant service)" /></Field>
+        <Field label="Legal / registered name (if different)"><input value={f.legalName || ""} onChange={up("legalName")} placeholder="As on GST certificate" /></Field>
+      </div>
       <div className="two">
         <Field label="Default tax %"><input type="number" min="0" value={f.taxPercent ?? 5} onChange={up("taxPercent")} /></Field>
         <Field label="Invoice prefix"><input value={f.prefix || "AA"} onChange={up("prefix")} maxLength={6} /></Field>
       </div>
-      <Field label="Bill footer note (optional)"><input value={f.footer || ""} onChange={up("footer")} placeholder="e.g. UPI: apnaadda@upi · Check-out 11 AM" /></Field>
+      <Field label="Bill footer note (optional)"><input value={f.footer || ""} onChange={up("footer")} placeholder="e.g. UPI: apnastay@upi · Check-out 11 AM" /></Field>
       <div className="row" style={{ justifyContent: "flex-end", marginTop: 18 }}>
         {saved && <span className="savedmsg"><LuCheck /> Saved</span>}
         <button className="primary" onClick={submit}><LuCheck /> Save details</button>
@@ -398,11 +419,13 @@ function History({ invoices, onPrint, onDelete }) {
 
 function PrintView({ inv, biz: current }) {
   const BUSINESS = { ...current, ...(inv.biz || {}) };
+  const split = gstSplit(BUSINESS, inv.guestGstin, inv.taxPercent, inv.tax);
+  const sac = BUSINESS.sac ?? "996331";
   return (
     <div id="print">
       <div className="wm" aria-hidden="true">
         <img src="/logo.png" alt="" />
-        <div className="wmtext">{Array.from({ length: 14 }, (_, i) => <span key={i}>APNA ADDA · HOMESTAY · </span>)}</div>
+        <div className="wmtext">{Array.from({ length: 14 }, (_, i) => <span key={i}>APNA STAY · </span>)}</div>
       </div>
       <div className="phead">
         <img src="/logo.png" alt="" className="plogo" />
@@ -410,25 +433,29 @@ function PrintView({ inv, biz: current }) {
           <h2>{BUSINESS.name}</h2>
           <p>{BUSINESS.address}</p>
           <p>{[BUSINESS.phone && "Ph: " + BUSINESS.phone, BUSINESS.email].filter(Boolean).join("  ·  ")}</p>
+          {BUSINESS.legalName && <p>{BUSINESS.legalName}</p>}
           {BUSINESS.gstin && <p><b>GSTIN: {BUSINESS.gstin}</b>{BUSINESS.fssai && <> &nbsp;·&nbsp; FSSAI: {BUSINESS.fssai}</>}</p>}
           {!BUSINESS.gstin && BUSINESS.fssai && <p>FSSAI: {BUSINESS.fssai}</p>}
         </div>
-        <div className="ptag">INVOICE</div>
+        <div className="ptag">{BUSINESS.gstin ? <>TAX<br />INVOICE</> : "INVOICE"}</div>
       </div>
       <div className="pmeta">
         <div><small>Invoice no.</small><b>{inv.no}</b></div>
         <div><small>Date</small><b>{new Date(inv.date).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</b></div>
         {inv.customer && <div><small>Guest</small><b>{inv.customer}</b></div>}
         {inv.room && <div><small>Room / Table</small><b>{inv.room}</b></div>}
+        {BUSINESS.gstin && <div><small>Place of supply</small><b>{stateOf(inv.guestGstin) || stateOf(BUSINESS.gstin)}</b></div>}
+        {inv.guestGstin && <div><small>Guest GSTIN</small><b>{inv.guestGstin}</b></div>}
       </div>
       <table>
-        <thead><tr><th>Item</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amt</th></tr></thead>
-        <tbody>{inv.lines.map((l) => <tr key={l.id}><td>{l.name}</td><td className="r">{l.qty}</td><td className="r">{inr(l.price)}</td><td className="r">{inr(l.price * l.qty)}</td></tr>)}</tbody>
+        <thead><tr><th>Item</th>{BUSINESS.gstin && sac && <th>SAC</th>}<th className="r">Qty</th><th className="r">Rate</th><th className="r">Amt</th></tr></thead>
+        <tbody>{inv.lines.map((l) => <tr key={l.id}><td>{l.name}</td>{BUSINESS.gstin && sac && <td>{sac}</td>}<td className="r">{l.qty}</td><td className="r">{inr(l.price)}</td><td className="r">{inr(l.price * l.qty)}</td></tr>)}</tbody>
       </table>
       <div className="totals">
         <div><span>Subtotal</span><span>{inr(inv.subtotal)}</span></div>
         {inv.discount > 0 && <div><span>Discount</span><span>−{inr(inv.discount)}</span></div>}
-        <div><span>Tax ({inv.taxPercent}%)</span><span>{inr(inv.tax)}</span></div>
+        {split && <div><span>Taxable value</span><span>{inr(inv.subtotal - (inv.discount || 0))}</span></div>}
+        {(split || [["Tax", inv.taxPercent, inv.tax]]).map(([n, r, a]) => <div key={n}><span>{n} ({r}%)</span><span>{inr(a)}</span></div>)}
         <div className="grand"><span>Total</span><span>{inr(inv.total)}</span></div>
       </div>
       <div className="pfoot">

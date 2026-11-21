@@ -141,6 +141,8 @@ td input { padding:7px 10px; }
 .two { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
 @media (max-width:600px) { .two { grid-template-columns:1fr; } }
 .settings { max-width:760px; margin:0 auto; }
+.hint { font-size:13px; color:var(--muted); margin:10px 0 0; }
+.guestgst { width:100%; font-size:13px; padding:8px 12px; text-transform:uppercase; }
 .savedmsg { color:var(--veg); display:inline-flex; align-items:center; gap:4px; font-weight:600; font-size:14px; }
 
 #print { display:none; }
@@ -157,7 +159,7 @@ td input { padding:7px 10px; }
   #print .plogo { width:84px; height:84px; object-fit:cover; object-position:50% 38%; }
   #print .phead h2 { margin:0; font-size:24px; color:#1e457e; letter-spacing:-.01em; }
   #print .phead p { margin:2px 0; color:#555; }
-  #print .ptag { margin-left:auto; font-size:28px; font-weight:800; letter-spacing:.15em; color:#f21e61; }
+  #print .ptag { margin-left:auto; text-align:right; line-height:1.1; font-size:24px; font-weight:800; letter-spacing:.15em; color:#f21e61; }
   #print .pmeta { display:grid; grid-template-columns:repeat(4,auto); gap:10px 24px; justify-content:start; margin:16px 0; padding:12px 14px; background:rgba(30,69,126,.05); border-radius:10px; }
   #print .pmeta small { display:block; color:#777; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
   #print table { margin-top:6px; }

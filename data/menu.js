@@ -1,7 +1,7 @@
 // Defaults only. Business details are edited in the app's Settings tab; menu items in the Menu tab.
 // Both are saved in the browser.
 export const BUSINESS = {
-  name: "Apna Adda Homestay",
+  name: "Apna Stay",
   tagline: "Where Mountains Meet Memories",
   address: "Serene Hills of Charaktaal",
   phone: "",
